@@ -9,6 +9,7 @@ export const DEFAULT_HOUSEHOLD: Household = {
       retirementAge: 65,
       lifeExpectancy: 90,
       salary: 150000,
+      salaryGrowthRate: 0.03,
     },
     {
       id: 'c2',
@@ -17,6 +18,7 @@ export const DEFAULT_HOUSEHOLD: Household = {
       retirementAge: 65,
       lifeExpectancy: 95,
       salary: 120000,
+      salaryGrowthRate: 0.03,
     },
   ],
   assets: [
@@ -88,6 +90,17 @@ export const DEFAULT_HOUSEHOLD: Household = {
       taxable: true,
       inflationAdjusted: true,
     },
+    {
+      id: 'fi4',
+      ownerId: 'c1',
+      name: 'Rental Property',
+      type: 'Rental',
+      monthlyAmount: 1000,
+      startAge: 50,
+      endAge: 80, // Selling it later
+      taxable: true,
+      inflationAdjusted: true,
+    }
   ],
   spending: [
     {
@@ -95,21 +108,24 @@ export const DEFAULT_HOUSEHOLD: Household = {
       name: 'Pre-Retirement',
       startAge: 50,
       endAge: 65,
-      annualAmount: 100000,
+      essential: 60000,
+      discretionary: 40000,
     },
     {
       id: 'sp2',
       name: 'Active Retirement',
       startAge: 65,
       endAge: 75,
-      annualAmount: 120000, // Travel etc.
+      essential: 50000,
+      discretionary: 70000, // Travel etc.
     },
     {
       id: 'sp3',
       name: 'Late Retirement',
       startAge: 75,
       endAge: 95,
-      annualAmount: 90000,
+      essential: 50000,
+      discretionary: 40000,
     },
   ],
   oneTimeExpenses: [
@@ -118,6 +134,7 @@ export const DEFAULT_HOUSEHOLD: Household = {
       name: 'Daughter Wedding',
       year: new Date().getFullYear() + 5,
       amount: 40000,
+      isEssential: false,
     },
   ],
   parameters: {

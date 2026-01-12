@@ -11,7 +11,11 @@ export interface SimulationResult {
         salary2: number;
         fixedIncome: number;
     };
-    expenses: number;
+    expenses: {
+        essential: number;
+        discretionary: number;
+        total: number;
+    };
     taxesPaid: number;
     surplus: number;
     withdrawalDetails: {
@@ -43,9 +47,10 @@ export function runSimulation(household: Household, isStressTest: boolean = fals
   
   // Initialize Simulation State
   let currentAssets = cloneAssets(household.assets);
-  const inflationRate = new Decimal(parameters.inflation);
-  const incomeTaxRate = new Decimal(parameters.taxRates.income);
-  const capitalGainsRate = new Decimal(parameters.taxRates.capitalGains);
+  const inflationRate = new Decimal(parameters.inflation ?? 0.03);
+  const incomeTaxRate = new Decimal(parameters.taxRates?.income ?? 0.25);
+  const capitalGainsRate = new Decimal(parameters.taxRates?.capitalGains ?? 0.15);
+  const startYear = parameters.startYear ?? new Date().getFullYear();
 
   // We determine the "Primary" contributor for relative dating (usually the first one)
   const primaryContributor = contributors[0];
@@ -59,7 +64,7 @@ export function runSimulation(household: Household, isStressTest: boolean = fals
 
   for (let yearStep = 0; yearStep <= 50; yearStep++) {
     const yearIndex = new Decimal(yearStep);
-    const calendarYear = parameters.startYear + yearStep;
+    const calendarYear = startYear + yearStep;
     
     // 1. Time Tracking & Ages
     const currentAges: Record<string, number> = {};
@@ -76,8 +81,10 @@ export function runSimulation(household: Household, isStressTest: boolean = fals
     contributors.forEach((c, index) => {
       const age = currentAges[c.id];
       if (age < c.retirementAge) {
+        // Use individual salary growth rate, fallback to inflation if undefined (safety)
+        const growthRate = c.salaryGrowthRate !== undefined ? new Decimal(c.salaryGrowthRate) : inflationRate;
         const nominalSalary = new Decimal(c.salary).times(
-          new Decimal(1).plus(inflationRate).pow(yearIndex)
+          new Decimal(1).plus(growthRate).pow(yearIndex)
         );
         if (index === 0) salary1 = nominalSalary;
         else salary2 = nominalSalary;
@@ -89,7 +96,10 @@ export function runSimulation(household: Household, isStressTest: boolean = fals
       const owner = contributors.find(c => c.id === fi.ownerId);
       const ownerAge = owner ? currentAges[owner.id] : primaryContributor.currentAge + yearStep; // Fallback
       
-      if (ownerAge >= fi.startAge) {
+      const isStarted = ownerAge >= fi.startAge;
+      const isEnded = fi.endAge ? ownerAge >= fi.endAge : false;
+
+      if (isStarted && !isEnded) {
         let annualAmount = new Decimal(fi.monthlyAmount).times(12);
         
         if (fi.inflationAdjusted) {
@@ -104,7 +114,8 @@ export function runSimulation(household: Household, isStressTest: boolean = fals
     const totalIncome = salary1.plus(salary2).plus(fixedIncomeTotal);
 
     // 3. Expense Calculation
-    let totalExpenses = new Decimal(0);
+    let expenseEssential = new Decimal(0);
+    let expenseDiscretionary = new Decimal(0);
 
     // Periodic Spending (Spending Phases)
     const primaryAge = currentAges[primaryContributor.id];
@@ -122,10 +133,17 @@ export function runSimulation(household: Household, isStressTest: boolean = fals
     }
 
     if (activePhase) {
-      const nominalExpense = new Decimal(activePhase.annualAmount).times(
-        new Decimal(1).plus(inflationRate).pow(yearIndex)
-      );
-      totalExpenses = totalExpenses.plus(nominalExpense);
+      const inflationFactor = new Decimal(1).plus(inflationRate).pow(yearIndex);
+      
+      // Fallback for stale data: use annualAmount if essential/discretionary are missing
+      const baseEssential = activePhase.essential ?? (activePhase as any).annualAmount ?? 0;
+      const baseDiscretionary = activePhase.discretionary ?? 0;
+
+      const nominalEssential = new Decimal(baseEssential).times(inflationFactor);
+      const nominalDiscretionary = new Decimal(baseDiscretionary).times(inflationFactor);
+      
+      expenseEssential = expenseEssential.plus(nominalEssential);
+      expenseDiscretionary = expenseDiscretionary.plus(nominalDiscretionary);
     }
 
     // One Time Expenses
@@ -134,9 +152,15 @@ export function runSimulation(household: Household, isStressTest: boolean = fals
         const nominalOTE = new Decimal(ote.amount).times(
             new Decimal(1).plus(inflationRate).pow(yearIndex)
         );
-        totalExpenses = totalExpenses.plus(nominalOTE);
+        if (ote.isEssential) {
+            expenseEssential = expenseEssential.plus(nominalOTE);
+        } else {
+            expenseDiscretionary = expenseDiscretionary.plus(nominalOTE);
+        }
       }
     });
+
+    const totalExpenses = expenseEssential.plus(expenseDiscretionary);
 
     // 4. Deficit / Surplus
     let netNeeded = totalExpenses.minus(totalIncome);
@@ -263,7 +287,11 @@ export function runSimulation(household: Household, isStressTest: boolean = fals
                 salary2: salary2.toNumber(),
                 fixedIncome: fixedIncomeTotal.toNumber()
             },
-            expenses: totalExpenses.toNumber(),
+            expenses: {
+                essential: expenseEssential.toNumber(),
+                discretionary: expenseDiscretionary.toNumber(),
+                total: totalExpenses.toNumber()
+            },
             taxesPaid: taxesPaidOnWithdrawals.toNumber(),
             surplus: netNeeded.lessThan(0) ? netNeeded.abs().toNumber() : 0,
             withdrawalDetails: {

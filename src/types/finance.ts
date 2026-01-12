@@ -7,6 +7,7 @@ export interface Contributor {
   retirementAge: number;
   lifeExpectancy: number;
   salary: number;
+  salaryGrowthRate: number; // e.g. 0.03
 }
 
 export interface Asset {
@@ -23,9 +24,10 @@ export interface FixedIncome {
   id: string;
   ownerId: string;
   name: string;
-  type: 'Pension' | 'SocialSecurity' | 'Other';
+  type: 'SocialSecurity' | 'Pension' | 'Annuity' | 'Rental' | 'Consulting' | 'Windfall';
   monthlyAmount: number;
   startAge: number;
+  endAge?: number; // Optional, defaults to life expectancy
   taxable: boolean;
   inflationAdjusted: boolean;
 }
@@ -34,7 +36,8 @@ export interface SpendingPhase {
   id: string;
   startAge: number; // Relative to primary contributor
   endAge: number;
-  annualAmount: number;
+  essential: number; // The Floor (Needs)
+  discretionary: number; // The Ceiling (Wants)
   name: string;
 }
 
@@ -43,6 +46,7 @@ export interface OneTimeExpense {
   year: number; // Calendar Year (e.g., 2028)
   amount: number;
   name: string;
+  isEssential: boolean;
 }
 
 export interface HouseholdParameters {

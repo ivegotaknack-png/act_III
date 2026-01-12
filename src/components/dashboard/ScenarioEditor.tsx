@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { MoneyInput } from "@/components/ui/money-input";
+import { PercentInput } from "@/components/ui/percent-input";
 import { Settings2, Plus, Trash2 } from "lucide-react";
 import { Household, FixedIncome, SpendingPhase, Contributor, Asset, TaxType, OneTimeExpense } from "@/types/finance";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -22,18 +23,24 @@ export default function ScenarioEditor() {
     updateHousehold(newHousehold);
   };
 
+  const parseIntSafe = (val: string) => {
+      const parsed = parseInt(val);
+      return isNaN(parsed) ? 0 : parsed;
+  };
+
+  const parseFloatSafe = (val: string) => {
+      const parsed = parseFloat(val);
+      return isNaN(parsed) ? 0 : parsed;
+  };
+
   // 1. Market Reality Handlers
-  const handleInflationChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = parseFloat(e.target.value) / 100; // Convert 3 to 0.03
-    if (isNaN(val)) return;
+  const handleInflationChange = (val: number) => {
     handleUpdate((h) => {
       h.parameters.inflation = val;
     });
   };
 
-  const handleGlobalReturnChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = parseFloat(e.target.value) / 100;
-    if (isNaN(val)) return;
+  const handleGlobalReturnChange = (val: number) => {
     handleUpdate((h) => {
       // Bulk update all assets
       h.assets.forEach(a => a.annualReturn = val);
@@ -83,7 +90,7 @@ export default function ScenarioEditor() {
   };
 
   // 4. Income Handlers
-  const handleIncomeChange = (id: string, field: keyof FixedIncome, newVal: string | number) => {
+  const handleIncomeChange = (id: string, field: keyof FixedIncome, newVal: string | number | boolean | undefined) => {
       handleUpdate((h) => {
           const income = h.fixedIncome.find(i => i.id === id);
           if (income) {
@@ -95,6 +102,9 @@ export default function ScenarioEditor() {
 
   const addIncomeSource = () => {
       handleUpdate((h) => {
+          // Ensure array exists
+          if (!h.fixedIncome) h.fixedIncome = [];
+          
           h.fixedIncome.push({
               id: `fi-${Date.now()}`,
               ownerId: h.contributors[0].id,
@@ -102,6 +112,7 @@ export default function ScenarioEditor() {
               type: 'Pension',
               monthlyAmount: 1000,
               startAge: 65,
+              endAge: undefined,
               taxable: true,
               inflationAdjusted: false,
           });
@@ -126,7 +137,7 @@ export default function ScenarioEditor() {
   };
 
   // 6. Event Handlers
-  const handleEventChange = (id: string, field: keyof OneTimeExpense, newVal: string | number) => {
+  const handleEventChange = (id: string, field: keyof OneTimeExpense, newVal: string | number | boolean) => {
     handleUpdate((h) => {
       const event = h.oneTimeExpenses.find(e => e.id === id);
       if (event) {
@@ -142,7 +153,8 @@ export default function ScenarioEditor() {
               id: `ote-${Date.now()}`,
               name: 'New Expense',
               year: h.parameters.startYear + 5,
-              amount: 10000
+              amount: 10000,
+              isEssential: false
           });
       });
   };
@@ -155,9 +167,7 @@ export default function ScenarioEditor() {
 
 
   // Derived Values for Display
-  const currentInflation = (household.parameters.inflation * 100).toFixed(1);
-  const currentReturn = household.assets.length > 0 ? (household.assets[0].annualReturn * 100).toFixed(1) : "7.0";
-
+  
   return (
     <Sheet>
       <SheetTrigger asChild>
@@ -199,7 +209,7 @@ export default function ScenarioEditor() {
                                         id={`c-age-${c.id}`}
                                         type="number"
                                         value={c.currentAge}
-                                        onChange={(e) => handleContributorChange(c.id, 'currentAge', parseInt(e.target.value))}
+                                        onChange={(e) => handleContributorChange(c.id, 'currentAge', parseIntSafe(e.target.value))}
                                     />
                                 </div>
                                 <div className="grid gap-1.5">
@@ -208,7 +218,7 @@ export default function ScenarioEditor() {
                                         id={`c-ret-${c.id}`}
                                         type="number"
                                         value={c.retirementAge}
-                                        onChange={(e) => handleContributorChange(c.id, 'retirementAge', parseInt(e.target.value))}
+                                        onChange={(e) => handleContributorChange(c.id, 'retirementAge', parseIntSafe(e.target.value))}
                                     />
                                 </div>
                             </div>
@@ -218,6 +228,14 @@ export default function ScenarioEditor() {
                                     id={`c-sal-${c.id}`}
                                     value={c.salary}
                                     onChange={(val) => handleContributorChange(c.id, 'salary', val)}
+                                />
+                            </div>
+                            <div className="grid gap-1.5 pt-1">
+                                <Label htmlFor={`c-growth-${c.id}`} className="text-xs">Salary Growth (%)</Label>
+                                <PercentInput 
+                                    id={`c-growth-${c.id}`}
+                                    value={c.salaryGrowthRate}
+                                    onChange={(val) => handleContributorChange(c.id, 'salaryGrowthRate', val)}
                                 />
                             </div>
                         </div>
@@ -237,8 +255,7 @@ export default function ScenarioEditor() {
                     type="number" 
                     value={household.parameters.startYear || new Date().getFullYear()}
                     onChange={(e) => {
-                        const val = parseInt(e.target.value);
-                        if (isNaN(val)) return;
+                        const val = parseIntSafe(e.target.value);
                         handleUpdate((h) => {
                             h.parameters.startYear = val;
                         });
@@ -247,21 +264,17 @@ export default function ScenarioEditor() {
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="inflation">Inflation Rate (%)</Label>
-                  <Input 
+                  <PercentInput 
                     id="inflation" 
-                    type="number" 
-                    step="0.1"
-                    value={currentInflation}
+                    value={household.parameters.inflation}
                     onChange={handleInflationChange}
                   />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="return">Global Annual Return (%)</Label>
-                  <Input 
+                  <PercentInput 
                     id="return" 
-                    type="number" 
-                    step="0.1"
-                    value={currentReturn}
+                    value={household.assets[0]?.annualReturn || 0.07} // Just a placeholder reading from first asset
                     onChange={handleGlobalReturnChange}
                   />
                   <p className="text-xs text-muted-foreground">Updates return rate for all assets.</p>
@@ -334,6 +347,15 @@ export default function ScenarioEditor() {
                              />
                          </div>
                     </div>
+                    <div className="grid gap-1.5 pt-1">
+                        <Label htmlFor={`asset-ret-${asset.id}`} className="text-xs text-muted-foreground">Exp. Return (%)</Label>
+                        <PercentInput 
+                            id={`asset-ret-${asset.id}`}
+                            value={asset.annualReturn}
+                            onChange={(val) => handleAssetChange(asset.id, 'annualReturn', val)}
+                            className="h-8"
+                        />
+                    </div>
                   </div>
                 ))}
                 <Button variant="secondary" size="sm" className="w-full mt-2" onClick={addAsset}>
@@ -365,22 +387,52 @@ export default function ScenarioEditor() {
                                  />
                              </div>
                              <div className="grid grid-cols-2 gap-2">
-                                <div className="grid gap-1">
-                                    <Label htmlFor={`inc-start-${income.id}`} className="text-xs">Start Age</Label>
-                                    <Input 
-                                        id={`inc-start-${income.id}`}
-                                        type="number"
-                                        value={income.startAge}
-                                        onChange={(e) => handleIncomeChange(income.id, 'startAge', parseFloat(e.target.value))}
-                                        className="h-8"
-                                    />
+                                <div className="grid gap-1.5">
+                                    <Label className="text-xs text-muted-foreground">Type</Label>
+                                    <Select 
+                                        value={income.type} 
+                                        onValueChange={(val) => handleIncomeChange(income.id, 'type', val)}
+                                    >
+                                        <SelectTrigger className="h-8">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="Pension">Pension</SelectItem>
+                                            <SelectItem value="SocialSecurity">Social Security</SelectItem>
+                                            <SelectItem value="Annuity">Annuity</SelectItem>
+                                            <SelectItem value="Rental">Rental</SelectItem>
+                                            <SelectItem value="Consulting">Consulting</SelectItem>
+                                            <SelectItem value="Windfall">Windfall</SelectItem>
+                                        </SelectContent>
+                                    </Select>
                                 </div>
-                                <div className="grid gap-1">
+                                <div className="grid gap-1.5">
                                     <Label htmlFor={`inc-amt-${income.id}`} className="text-xs">Monthly ($)</Label>
                                     <MoneyInput 
                                         id={`inc-amt-${income.id}`}
                                         value={income.monthlyAmount}
                                         onChange={(val) => handleIncomeChange(income.id, 'monthlyAmount', val)}
+                                        className="h-8"
+                                    />
+                                </div>
+                             </div>
+                             <div className="grid gap-1.5">
+                                <Label htmlFor={`inc-start-${income.id}`} className="text-xs">Start Age</Label>
+                                <div className="flex gap-2">
+                                    <Input 
+                                        id={`inc-start-${income.id}`}
+                                        type="number"
+                                        placeholder="Start"
+                                        value={income.startAge}
+                                        onChange={(e) => handleIncomeChange(income.id, 'startAge', parseFloatSafe(e.target.value))}
+                                        className="h-8"
+                                    />
+                                    <Input 
+                                        id={`inc-end-${income.id}`}
+                                        type="number"
+                                        placeholder="Life"
+                                        value={income.endAge || ''}
+                                        onChange={(e) => handleIncomeChange(income.id, 'endAge', e.target.value ? parseFloatSafe(e.target.value) : undefined)}
                                         className="h-8"
                                     />
                                 </div>
@@ -400,14 +452,14 @@ export default function ScenarioEditor() {
                      {household.spending.map((phase) => (
                          <div key={phase.id} className="space-y-2 border-b pb-2 last:border-0">
                              <Label className="font-semibold">{phase.name}</Label>
-                             <div className="grid grid-cols-3 gap-2">
+                             <div className="grid grid-cols-2 gap-2">
                                  <div className="grid gap-1">
                                      <Label htmlFor={`spd-start-${phase.id}`} className="text-xs">Start</Label>
                                      <Input 
                                          id={`spd-start-${phase.id}`}
                                          type="number"
                                          value={phase.startAge}
-                                         onChange={(e) => handleSpendingChange(phase.id, 'startAge', parseFloat(e.target.value))}
+                                         onChange={(e) => handleSpendingChange(phase.id, 'startAge', parseFloatSafe(e.target.value))}
                                      />
                                  </div>
                                  <div className="grid gap-1">
@@ -416,17 +468,25 @@ export default function ScenarioEditor() {
                                          id={`spd-end-${phase.id}`}
                                          type="number"
                                          value={phase.endAge}
-                                         onChange={(e) => handleSpendingChange(phase.id, 'endAge', parseFloat(e.target.value))}
+                                         onChange={(e) => handleSpendingChange(phase.id, 'endAge', parseFloatSafe(e.target.value))}
                                      />
                                  </div>
-                                 <div className="col-span-3 grid gap-1">
-                                     <Label htmlFor={`spd-amt-${phase.id}`} className="text-xs">Annual Amount ($)</Label>
-                                     <MoneyInput 
-                                         id={`spd-amt-${phase.id}`}
-                                         value={phase.annualAmount}
-                                         onChange={(val) => handleSpendingChange(phase.id, 'annualAmount', val)}
-                                     />
-                                 </div>
+                             </div>
+                             <div className="grid gap-1">
+                                 <Label htmlFor={`spd-ess-${phase.id}`} className="text-xs">Essential (Needs)</Label>
+                                 <MoneyInput 
+                                     id={`spd-ess-${phase.id}`}
+                                     value={phase.essential}
+                                     onChange={(val) => handleSpendingChange(phase.id, 'essential', val)}
+                                 />
+                             </div>
+                             <div className="grid gap-1">
+                                 <Label htmlFor={`spd-disc-${phase.id}`} className="text-xs">Discretionary (Wants)</Label>
+                                 <MoneyInput 
+                                     id={`spd-disc-${phase.id}`}
+                                     value={phase.discretionary}
+                                     onChange={(val) => handleSpendingChange(phase.id, 'discretionary', val)}
+                                 />
                              </div>
                          </div>
                      ))}
@@ -462,7 +522,7 @@ export default function ScenarioEditor() {
                           id={`evt-year-${event.id}`}
                           type="number"
                           value={event.year}
-                          onChange={(e) => handleEventChange(event.id, 'year', parseFloat(e.target.value))}
+                          onChange={(e) => handleEventChange(event.id, 'year', parseFloatSafe(e.target.value))}
                           className="h-8"
                         />
                       </div>
@@ -475,6 +535,14 @@ export default function ScenarioEditor() {
                           className="h-8"
                         />
                       </div>
+                    </div>
+                    <div className="flex items-center space-x-2 pt-1">
+                        <Switch 
+                            id={`evt-ess-${event.id}`}
+                            checked={event.isEssential}
+                            onCheckedChange={(val) => handleEventChange(event.id, 'isEssential', val)}
+                        />
+                        <Label htmlFor={`evt-ess-${event.id}`} className="text-xs">Is Essential?</Label>
                     </div>
                   </div>
                 ))}
